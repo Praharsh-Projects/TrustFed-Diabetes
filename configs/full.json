@@ -1,0 +1,41 @@
+{
+  "name": "full",
+  "base_output_dir": "results/runs",
+  "skip_missing_datasets": true,
+  "datasets": [
+    {
+      "dataset": "pima",
+      "data_path": "data/raw/pima_diabetes.csv"
+    },
+    {
+      "dataset": "cdc",
+      "data_path": "data/raw/cdc_diabetes_health_indicators.csv"
+    },
+    {
+      "dataset": "early_stage",
+      "data_path": "data/raw/early_stage_diabetes_risk_prediction.csv"
+    }
+  ],
+  "seeds": [42, 43, 44, 45, 46],
+  "clients": [3, 5, 10],
+  "partitions": [
+    {"partition": "iid", "alpha": 0.5},
+    {"partition": "non_iid", "alpha": 1.0},
+    {"partition": "non_iid", "alpha": 0.5},
+    {"partition": "non_iid", "alpha": 0.1}
+  ],
+  "centralized_models": ["logistic_regression", "random_forest", "gradient_boosting", "decision_tree", "mlp"],
+  "federated_models": ["logistic", "mlp"],
+  "algorithms": ["fedavg", "fedprox"],
+  "calibrations": ["none", "sigmoid", "isotonic"],
+  "rounds": 30,
+  "local_epochs": 2,
+  "learning_rate": 0.02,
+  "batch_size": 512,
+  "hidden_units": 24,
+  "fedprox_mu": 0.01,
+  "target_auc": 0.75,
+  "target_f1": null,
+  "target_ece": null,
+  "build_static_dashboard": false
+}

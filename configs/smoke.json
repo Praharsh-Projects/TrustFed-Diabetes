@@ -1,0 +1,23 @@
+{
+  "dataset": "synthetic",
+  "synthetic_samples": 500,
+  "seed": 42,
+  "clients": 3,
+  "partition": "iid",
+  "alpha": 0.5,
+  "centralized_models": ["logistic_regression", "random_forest", "gradient_boosting", "decision_tree", "mlp"],
+  "federated_models": ["logistic", "mlp"],
+  "algorithms": ["fedavg", "fedprox"],
+  "calibrations": ["none", "sigmoid", "isotonic"],
+  "rounds": 4,
+  "local_epochs": 1,
+  "learning_rate": 0.03,
+  "batch_size": 64,
+  "hidden_units": 12,
+  "fedprox_mu": 0.01,
+  "target_auc": 0.75,
+  "target_f1": null,
+  "target_ece": null,
+  "output_dir": "results/runs/smoke",
+  "build_static_dashboard": true
+}

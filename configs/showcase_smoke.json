@@ -1,0 +1,44 @@
+{
+  "name": "showcase_smoke",
+  "base_output_dir": "results/showcase_smoke_runs",
+  "skip_missing_datasets": true,
+  "experiment_track": "showcase",
+  "search_profile": "showcase",
+  "save_prediction_artifacts": true,
+  "datasets": [
+    {
+      "dataset": "pima",
+      "data_path": "data/raw/pima_diabetes.csv"
+    },
+    {
+      "dataset": "cdc",
+      "data_path": "data/raw/cdc_diabetes_health_indicators.csv",
+      "max_rows": 5000
+    }
+  ],
+  "seeds": [42],
+  "clients": [3],
+  "partitions": [
+    {"partition": "iid", "alpha": 0.5},
+    {"partition": "non_iid", "alpha": 0.5}
+  ],
+  "decision_threshold_strategies": ["fixed_0p5", "calib_f1_optimal"],
+  "centralized_models": ["gradient_boosting", "xgboost"],
+  "local_only_models": [],
+  "federated_models": ["logistic"],
+  "algorithms": ["fedavg"],
+  "calibrations": ["none", "sigmoid", "isotonic"],
+  "rounds": 20,
+  "local_epochs": 1,
+  "learning_rate": 0.03,
+  "batch_size": 256,
+  "hidden_units": 16,
+  "fedprox_mu": 0.01,
+  "target_auc": 0.75,
+  "target_f1": null,
+  "target_ece": null,
+  "tune_models": true,
+  "tune_local_models": false,
+  "tune_federated": true,
+  "build_static_dashboard": false
+}

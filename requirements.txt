@@ -1,0 +1,10 @@
+numpy>=2.0
+pandas>=2.0
+scikit-learn>=1.5
+plotly>=6.0
+shap>=0.47
+dash>=2.17
+dash-echarts==0.0.12.9
+ucimlrepo>=0.0.7
+fairlearn>=0.10
+xgboost>=3.2

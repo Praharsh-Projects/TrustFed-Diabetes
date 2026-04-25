@@ -1,0 +1,39 @@
+{
+  "name": "full_cdc_visual_verify",
+  "base_output_dir": "results/full_cdc_visual_runs",
+  "skip_missing_datasets": true,
+  "experiment_track": "audit",
+  "search_profile": "audit",
+  "save_prediction_artifacts": true,
+  "datasets": [
+    {
+      "dataset": "cdc",
+      "data_path": "data/raw/cdc_diabetes_health_indicators.csv",
+      "centralized_models": ["xgboost", "gradient_boosting"]
+    }
+  ],
+  "seeds": [42, 43, 44],
+  "clients": [3, 5],
+  "partitions": [
+    {"partition": "iid", "alpha": 0.5},
+    {"partition": "non_iid", "alpha": 0.5}
+  ],
+  "decision_threshold_strategies": ["calib_f1_optimal"],
+  "local_only_models": [],
+  "federated_models": ["logistic"],
+  "algorithms": ["fedavg", "fedprox"],
+  "calibrations": ["none", "sigmoid", "isotonic"],
+  "rounds": 20,
+  "local_epochs": 2,
+  "learning_rate": 0.03,
+  "batch_size": 256,
+  "hidden_units": 16,
+  "fedprox_mu": 0.01,
+  "target_auc": 0.75,
+  "target_f1": null,
+  "target_ece": null,
+  "tune_models": true,
+  "tune_local_models": false,
+  "tune_federated": true,
+  "build_static_dashboard": false
+}
