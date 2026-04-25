@@ -10,6 +10,10 @@ outputs/
 dashboard_*.out
 dashboard_*.err
 tmp_dashboard_*
+MT.pdf
+a3954a1c-cd1d-409c-a74d-ef95e5c1c06a.jpg
+a8630fd9-325d-4149-96b3-94059102791e.jpg
+aba85dda-bcaf-4183-bf7e-efc46de32a65.jpg
 results/**
 !results/
 !results/full_cdc_polished_summary/
