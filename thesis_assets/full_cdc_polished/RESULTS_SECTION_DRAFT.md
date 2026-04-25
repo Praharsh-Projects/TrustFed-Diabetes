@@ -111,9 +111,174 @@ py scripts/export_thesis_assets.py --summary-dir results/full_cdc_polished_summa
 
 These commands matter in the Results chapter because the contribution of the thesis is not only a dashboard or only a classifier. It is a reproducible evaluation framework in which the tables, figures, and narrative all come from saved outputs.
 
+### 1.6 Computation and Reading Guide
+
+This subsection explains the notation, aggregation rules, threshold rules, and split conventions used throughout the remainder of the chapter. Its purpose is to make the later chart sections readable without forcing the reader to reverse-engineer the code or the exported CSV files.
+
+#### Notation and symbols
+
+The chapter uses a small set of recurring symbols. `y_true` means the true binary label, with `1` representing the positive class and `0` representing the negative class. `y_pred` means the thresholded binary prediction. `p_i` means the predicted probability for case `i`. `t` means the decision threshold used to convert a predicted probability into a yes/no prediction. `B_m` means the `m`-th probability bin in calibration analysis. `g` means a subgroup such as an age category, BMI category, or sex category. `n` means the number of rows contributing to the summary being reported.
+
+The confusion-matrix notation also follows the standard convention. `TP` means true positives, `TN` means true negatives, `FP` means false positives, and `FN` means false negatives. In simple terms, these four quantities count all correct and incorrect binary decisions after a threshold has been applied.
+
+#### How metric values are aggregated
+
+The dashboard is not plotting one raw run at a time unless the chart is explicitly based on a single saved explanation or a single saved prediction-backed visual. Most dashboard summaries are aggregated across grouped rows. The aggregation code uses grouped means, sample standard deviations, and 95% confidence intervals.
+
+For a grouped metric value `x_1, x_2, ..., x_n`, the reported mean is:
+
+`mean = (1 / n) * sum_(i=1 to n) x_i`
+
+The reported sample standard deviation is:
+
+`std = sqrt( sum_(i=1 to n) (x_i - mean)^2 / (n - 1) )`
+
+The 95% confidence interval used in the exported summaries is:
+
+`mean +/- 1.96 * std / sqrt(n)`
+
+This is the exact rule implemented in [metrics.py](C:/Users/praha/Desktop/Joshna/src/fl_diabetes/metrics.py) through `aggregate_with_confidence_intervals` and `_ci95`. If only one grouped row is available, the confidence interval collapses to the mean itself. In practical terms, this means the confidence interval is a summary of run-to-run variation within the grouped slice, not a claim of clinical uncertainty.
+
+#### How thresholds are selected
+
+The dashboard uses two `Decision Rule` settings.
+
+`fixed_0p5` means that the positive class is predicted whenever `p_i >= 0.5`. This is the simplest thresholding rule and acts as a transparent baseline.
+
+`calib_f1_optimal` means that a threshold is chosen from a candidate set to maximize `Balanced Detection Score (F1)` on the **calibration split only**. This is important enough to state explicitly: the test split is not used to choose the threshold. The test split is only used for final evaluation after the threshold has already been chosen.
+
+In the code, the candidate thresholds come from a combined grid-and-quantile set: a fixed grid from 0.05 to 0.95, calibration-probability quantiles at the same 19 points, and the explicit value `0.5`. The candidates are clipped into `(0, 1)`, rounded to four decimals, and then evaluated on the calibration split. If two thresholds achieve the same F1, the tie is broken in favor of the threshold closest to `0.5`. This tie-break rule is written directly in [metrics.py](C:/Users/praha/Desktop/Joshna/src/fl_diabetes/metrics.py) inside `select_decision_threshold`.
+
+#### How to interpret split-specific visuals
+
+Some of the most common reader confusions come from mixing together different split roles.
+
+The confusion matrix is built from the **held-out test fold only**. It does not sum to the full dataset size because it is not supposed to include training or calibration rows. In the final full-CDC package, that means the total count is about **50,736**, not 253,680.
+
+The score-distribution chart is also test-based, but it is not a raw-count chart. It is a **normalized within-class distribution**. That means the positive and negative class distributions are each scaled so that their shapes can be compared fairly. The chart therefore shows how scores spread, not how many raw rows are in each class.
+
+The broad audit package and the visual verification package also play different roles. The broad audit package is the source of the final best-row claims. The visual verification package is the source of prediction-backed charts such as confusion matrices, ROC curves, PR curves, score distributions, and representative explanation snapshots. When the visual package is narrower than the broad package, the Results chapter states that distinction explicitly instead of silently pretending they are identical.
+
+### 1.7 Metric formulas and implementation basis
+
+This subsection defines the dashboard metrics formally. Unless stated otherwise, probability-based metrics are computed from the **test probabilities**, while threshold-based metrics are computed from the **test labels and thresholded test predictions**. Where the implementation relies on a library-backed function, that is stated directly so that the reader knows whether the metric is handwritten or delegated to a standard metric implementation.
+
+`Accuracy` is the overall fraction of correct binary predictions:
+
+`Accuracy = (TP + TN) / (TP + TN + FP + FN)`
+
+`Precision` is the fraction of predicted positives that are correct:
+
+`Precision = TP / (TP + FP)`
+
+`Recall` is the fraction of true positives that are found:
+
+`Recall = TP / (TP + FN)`
+
+`Specificity` is the fraction of true negatives that remain negative:
+
+`Specificity = TN / (TN + FP)`
+
+`Balanced Accuracy` is the arithmetic mean of recall and specificity:
+
+`Balanced Accuracy = (Recall + Specificity) / 2`
+
+`Balanced Detection Score (F1)` is the harmonic mean of precision and recall:
+
+`Balanced Detection Score (F1) = 2 * Precision * Recall / (Precision + Recall)`
+
+`Ranking Quality (AUROC)` is the area under the receiver operating characteristic curve computed from the test probabilities. In the implementation, this is metric-library-backed through `roc_auc_score` in scikit-learn. In simple language, it asks whether truly positive cases are ranked above truly negative cases across all thresholds.
+
+`Positive-Case Ranking (PR AUC)` is the area under the precision-recall curve, implemented through scikit-learn's `average_precision_score`. It emphasizes how well the model concentrates truly positive cases near the top of the ranking.
+
+`Probability Error (Brier)` is the mean squared probability error:
+
+`Brier = (1 / n) * sum_(i=1 to n) (p_i - y_true,i)^2`
+
+`Confidence Penalty (Log Loss)` is the negative average log-likelihood of the true labels under the predicted probabilities:
+
+`Log Loss = -(1 / n) * sum_(i=1 to n) [ y_true,i * log(p_i) + (1 - y_true,i) * log(1 - p_i) ]`
+
+In the implementation, Brier and Log Loss use scikit-learn's `brier_score_loss` and `log_loss`.
+
+`Risk Match Error (ECE)` is the expected calibration error. The code uses the exact 10-bin formulation:
+
+`ECE = sum_(m=1 to 10) (|B_m| / n) * | observed_event_rate(B_m) - avg_predicted_risk(B_m) |`
+
+This formulation is implemented directly in [metrics.py](C:/Users/praha/Desktop/Joshna/src/fl_diabetes/metrics.py) by `expected_calibration_error`. Probabilities are clipped into `(1e-6, 1 - 1e-6)` before binning, and only non-empty bins contribute to the sum.
+
+`Positive Prediction Rate` is the average thresholded predicted-positive label in a subgroup:
+
+`Positive Prediction Rate = (1 / n_g) * sum_(i in g) y_pred,i`
+
+`Positive Rate Gap` is the largest subgroup difference in positive prediction rate:
+
+`Positive Rate Gap = max_g PositivePredictionRate(g) - min_g PositivePredictionRate(g)`
+
+This corresponds to the exported `Demographic Parity Difference`.
+
+`Error Gap Between Groups` is the larger of the true-positive-rate gap and the false-positive-rate gap across subgroups:
+
+`Error Gap Between Groups = max( max_g TPR(g) - min_g TPR(g), max_g FPR(g) - min_g FPR(g) )`
+
+This corresponds to the exported `Equalized Odds Difference`.
+
+`Explanation Stability` is the Spearman-style rank correlation between successive rounds' absolute feature-importance vectors. In the implementation, absolute scores are ranked first and then correlated. In simple language, it measures whether the feature ranking changes dramatically from one round to the next.
+
+`Cross-Client Top-k Overlap` is the fraction of top-k features shared by two clients:
+
+`Cross-Client Top-k Overlap = |TopK(left) intersect TopK(right)| / k`
+
+`Communication bytes` is the amount of model-update traffic sent in a single round. `Cumulative communication bytes` is the cumulative sum of those bytes over rounds. These values are saved directly in the communication summaries rather than being inferred from the plots.
+
+### 1.8 Chart construction and source-table conventions
+
+The dashboard charts are built from exported CSV summaries rather than from live training objects. This distinction is important because the Results chapter is meant to be reproducible from saved outputs.
+
+The broad audit package provides the main grouped tables:
+
+- [dashboard_metrics.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_metrics.csv)
+- [dashboard_calibration.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_calibration.csv)
+- [dashboard_fairness.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_fairness.csv)
+- [dashboard_rounds.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_rounds.csv)
+- [dashboard_shap.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_shap.csv)
+- [dashboard_thresholds.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_thresholds.csv)
+- [dashboard_showcase_metrics.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_showcase_metrics.csv)
+- [dashboard_score_ceiling.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_score_ceiling.csv)
+
+The visual verification package provides the prediction-backed plot sources:
+
+- [dashboard_curves.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_visual_summary/dashboard_curves.csv)
+- [dashboard_confusion.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_visual_summary/dashboard_confusion.csv)
+- [dashboard_local_explanations.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_visual_summary/dashboard_local_explanations.csv)
+- [dashboard_stability.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_visual_summary/dashboard_stability.csv)
+
+Unless a chart explicitly shows direct confusion-cell counts or a representative local explanation, the dashboard normally plots **grouped means** rather than single raw rows. Where confidence intervals are available, they come from the grouped summary tables described above. Where the chapter discusses a specific visual chart that does not use confidence bands, the relevant subsection states whether the plotted value is a mean, a normalized share, or a direct count.
+
+### 1.9 Reader clarification notes
+
+Several misunderstandings are likely enough that they are worth addressing before the chart-by-chart walkthrough.
+
+**Why the confusion matrix does not sum to 253,680.** The confusion matrix is based on the held-out test fold only. It therefore sums to the test-fold size, not to the full dataset size.
+
+**Why the score-distribution chart does not show raw full-data counts.** The score-distribution view uses normalized within-class shares so that the shapes of the positive and negative score distributions can be compared fairly.
+
+**Why the best federated headline row may differ from the federated visual chart row.** The broad audit package determines the final best-row claims. The visual verification package determines which slices have saved prediction-backed charts. When the visual package is narrower, the chapter uses the visual slice as an illustration and states that explicitly.
+
+**Why AUROC can stay almost unchanged while calibration improves a great deal.** AUROC measures ranking quality, while calibration measures whether the risk percentages themselves match reality. A model can rank cases almost identically before and after calibration even if its probabilities become much more trustworthy.
+
+**Why `fixed_0p5` and `calib_f1_optimal` can make the same model look very different.** The decision threshold changes the operating point dramatically. The trained model is the same, but the deployed yes/no rule changes recall, specificity, precision, and subgroup gaps.
+
 ## 2. Showcase
 
 The `Showcase` page is the dashboard's headline page. It is designed to answer the first practical question a reader asks: *What is the clearest top-level story of the project once the full CDC data have been processed?* The page therefore combines headline cards with three main evidence surfaces: case classification, score distribution, and decision-rule tradeoff.
+
+| Chart / Card | Source file | Primary grouping | Primary value(s) | Split basis | Aggregation meaning |
+| --- | --- | --- | --- | --- | --- |
+| `Best Centralized Model`, `Best Federated Model`, `How Close Federated Gets`, `Best Probability-Quality Setup`, `Best Low False-Positive Setup`, `Best Probability Adjustment`, `Best Overall Evidence Slice` | `dashboard_showcase_metrics.csv`, `dashboard_score_ceiling.csv`, thesis summary tables | selected `run_type`, `model`, `algorithm`, `calibration`, `threshold_strategy`, and scenario metadata | grouped means for AUROC, PR AUC, F1, ECE, Brier, specificity, and chosen thresholds | test metrics, with calibration-derived thresholds where applicable | headline cards summarize grouped means across matching saved runs |
+| `How The Best Models Classify Cases` | `dashboard_confusion.csv` | selected showcase slice and confusion cell | mean cell count | held-out test fold only | each cell is the grouped mean confusion count for the visual slice |
+| `How Risk Scores Spread Across Classes` | `dashboard_curves.csv` | selected showcase slice, class label, and score bin | normalized within-class share | held-out test fold only | each line or density trace shows class-wise normalized score mass |
+| `What Changes When We Raise Or Lower The Decision Rule` | `dashboard_thresholds.csv` | selected slice, threshold, and `group_feature` | grouped mean F1, precision, recall, specificity, `Positive Rate Gap`, and `Error Gap Between Groups` | threshold sweep over calibration-derived candidate thresholds | each trace is a grouped mean metric value by threshold |
 
 ### 2.1 Showcase cards
 
@@ -196,6 +361,10 @@ In the full-CDC result package, the strongest adjustment family is the **Isotoni
 
 Under that rule, the final `Best Overall Evidence Slice` is still the `Centralized / XGBoost / None / calib_f1_optimal` row. This is expected. It confirms that pooled-data training remains the raw upper bound for overall prediction quality in the current study.
 
+#### How these cards were computed and plotted
+
+The showcase cards are built primarily from [dashboard_showcase_metrics.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_showcase_metrics.csv), with supporting rows from [dashboard_score_ceiling.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_score_ceiling.csv) and the exported best-row thesis tables in [thesis_assets/full_cdc_polished/tables](C:/Users/praha/Desktop/Joshna/thesis_assets/full_cdc_polished/tables). The `Best Centralized Model` and `Best Federated Model` cards come from grouped summary rows ordered by the dashboard's showcase selection logic. `How Close Federated Gets` is computed by subtracting the selected federated headline row from the selected centralized headline row on the key summary metrics. `Best Probability-Quality Setup` comes from the best calibration-oriented grouped row, and `Best Low False-Positive Setup` comes from the row that minimizes the false-positive rate while preserving the reported operating-point metadata. These cards are therefore not hand-picked screenshots; they are rendered from exported grouped tables.
+
 [Insert Figure R1 here: Showcase cards and headline values]
 
 Figure title: `Showcase` overview.
@@ -260,6 +429,10 @@ This chart supports the thesis claim about decision-support readiness. It shows 
 
 This chart does not prove causal validity, clinical utility, or fairness by itself. A confusion matrix only reports classification outcomes at one chosen threshold. It cannot explain whether the probabilities are well calibrated, whether subgroup disparities are acceptable, or whether the selected threshold is clinically preferable.
 
+#### How this chart was computed and plotted
+
+This chart is built from [dashboard_confusion.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_visual_summary/dashboard_confusion.csv), which is sourced from saved prediction artifacts in the full-CDC visual verification package. The grouping is the selected showcase slice plus the confusion `cell` label (`TN`, `FP`, `FN`, `TP`). The plotted value is `count_mean`, so the displayed numbers are grouped mean cell counts rather than one raw run's counts. The split basis is the held-out **test fold only**. No training or calibration rows are included. The centralized side uses the saved full-CDC centralized prediction-backed visual, while the federated side uses the closest available saved federated visual slice when the broad headline row itself does not have a matching prediction-backed artifact in the visual package.
+
 ### 2.3 `How Risk Scores Spread Across Classes`
 
 [Insert Figure R3 here: How Risk Scores Spread Across Classes]
@@ -299,6 +472,10 @@ This chart supports the thesis argument that the selected models genuinely rank 
 #### What this chart does not prove
 
 This chart does not prove that the assigned risk percentages are correctly calibrated. A model can separate classes reasonably well and still give poorly matched probabilities. That is why the calibration section remains necessary.
+
+#### How this chart was computed and plotted
+
+This chart is built from [dashboard_curves.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_visual_summary/dashboard_curves.csv). The grouping is the selected showcase slice, the true class label, and the score bin. The plotted value is a normalized within-class share rather than a raw count. In other words, each class distribution is normalized so that the reader can compare the shapes of the positive-class and negative-class score profiles directly. The split basis is again the held-out **test fold only**. The chart therefore visualizes class-wise score spread, not total dataset size.
 
 ### 2.4 `What Changes When We Raise Or Lower The Decision Rule`
 
@@ -340,9 +517,17 @@ This chart directly supports the thesis argument that performance alone is not e
 
 This chart does not prove that one threshold is universally best. The preferred threshold depends on whether the goal is balanced detection, fewer false positives, or lower subgroup disparity. The chart therefore supports decision-making, but it does not replace that decision.
 
+#### How this chart was computed and plotted
+
+This chart is built from [dashboard_thresholds.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_thresholds.csv). The grouping is the selected slice, threshold value, and subgroup family where applicable. The plotted values are grouped means such as `f1_mean`, `precision_mean`, `recall_mean`, `specificity_mean`, `demographic_parity_difference_mean`, and `equalized_odds_difference_mean`. The threshold sweep itself comes from calibration-derived candidate thresholds generated by the threshold-selection code described earlier, while the final plotted traces summarize the exported threshold rows. Where the dashboard shows a selected threshold marker, it corresponds to the slice's chosen decision threshold in the grouped summary.
+
 ## 3. Model Comparison
 
 The `Model Comparison` page answers a broader question than the showcase page. Instead of focusing on one selected reference pair, it asks how the trained model families compare across `Centralized`, `Local-Only`, `Average Local-Only`, and `Federated` settings.
+
+| Chart / Card | Source file | Primary grouping | Primary value(s) | Split basis | Aggregation meaning |
+| --- | --- | --- | --- | --- | --- |
+| `How The Trained Models Compare` | `dashboard_metrics.csv` | `run_type`, `model`, `algorithm`, `calibration`, `threshold_strategy`, site and partition metadata | `roc_auc_mean`, `f1_mean`, `pr_auc_mean`, `ece_mean` | test metrics under the chosen threshold strategy | each point is a grouped mean across matching runs and seeds |
 
 ### 3.1 `How The Trained Models Compare`
 
@@ -388,9 +573,19 @@ This chart supports the central project claim that the correct headline is "Fede
 
 This chart does not prove that the top-right model is automatically the best operational choice. It does not include communication cost, calibration quality, or subgroup gaps by itself.
 
+#### How this chart was computed and plotted
+
+This chart is built from [dashboard_metrics.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_metrics.csv). The grouping is the selected scenario metadata, including `run_type`, `model`, `algorithm`, `calibration`, `threshold_strategy`, and the site/partition descriptors that remain under the active filters. The x-axis uses `roc_auc_mean`, the y-axis uses `f1_mean`, and companion values such as `pr_auc_mean` and `ece_mean` are pulled from the same grouped rows for tooltips or card text. The values are grouped means across matching runs and seeds, not one raw run. This chart therefore belongs to the broad audit package rather than the visual verification package.
+
 ## 4. Calibration
 
 The `Calibration` page addresses whether the predicted risk percentages can be trusted as probabilities, not only whether the cases are ranked well. This distinction is central to the thesis because decision support requires meaningful probabilities, not only high AUROC.
+
+| Chart / Card | Source file | Primary grouping | Primary value(s) | Split basis | Aggregation meaning |
+| --- | --- | --- | --- | --- | --- |
+| `Do The Risk Percentages Match Reality?` | `dashboard_calibration.csv` | selected slice and reliability bin | `avg_predicted_risk_mean`, `observed_event_rate_mean` | held-out test probabilities binned into ten reliability bins | each point is a grouped bin mean |
+| `How Many Cases Fall Into Each Risk Range` | `dashboard_calibration.csv` | selected slice and reliability bin | `count_mean` | held-out test probabilities binned into ten reliability bins | each bar or heatmap cell is the grouped mean count in a probability bin |
+| `Which Probability Adjustment Gives The Most Trustworthy Risks?` | `dashboard_metrics.csv`, `dashboard_showcase_metrics.csv` | `calibration` with selected model and run metadata | `ece_mean`, `brier_mean`, `log_loss_mean` | test probabilities after the selected probability-adjustment method | each point or lollipop is a grouped mean summary row |
 
 ### 4.1 `Do The Risk Percentages Match Reality?`
 
@@ -446,6 +641,10 @@ This chart strongly supports the thesis argument that calibration is not an opti
 
 This chart does not prove clinical actionability by itself. A well-calibrated risk score is easier to interpret, but calibration alone does not determine whether a threshold is ethically or clinically appropriate.
 
+#### How this chart was computed and plotted
+
+This chart is built from [dashboard_calibration.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_calibration.csv). The grouping is the selected slice together with the reliability `bin`. The x-axis uses `avg_predicted_risk_mean`, and the y-axis uses `observed_event_rate_mean`. Each point therefore represents a grouped mean probability bin in the held-out test data. The diagonal reference line is a plotting aid rather than a measured series; it represents perfect calibration where predicted risk matches observed event frequency exactly.
+
 ### 4.2 `How Many Cases Fall Into Each Risk Range`
 
 [Insert Figure R7 here: How Many Cases Fall Into Each Risk Range]
@@ -486,6 +685,10 @@ This chart supports responsible interpretation of the calibration figures. It re
 
 This chart does not prove good or bad calibration by itself. It only shows the support structure of the risk scale.
 
+#### How this chart was computed and plotted
+
+This chart also comes from [dashboard_calibration.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_calibration.csv). The grouping is the selected slice and calibration `bin`, and the plotted value is `count_mean`. In practical terms, the chart shows the mean number of held-out test cases falling into each probability bin under the selected `Probability Adjustment`. The chart does not normalize the counts across bins; it reports grouped mean bin occupancy. That is why it answers a different question from the normalized score-distribution chart on the `Showcase` page.
+
 ### 4.3 `Which Probability Adjustment Gives The Most Trustworthy Risks?`
 
 [Insert Figure R8 here: Which Probability Adjustment Gives The Most Trustworthy Risks?]
@@ -524,9 +727,20 @@ This chart supports one of the strongest trustworthiness claims in the thesis: t
 
 This chart does not prove that the same calibration method is universally best for every model family, dataset, or deployment objective. It only proves what was strongest within the current result package.
 
+#### How this chart was computed and plotted
+
+This chart is constructed from the grouped metric summaries in [dashboard_metrics.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_metrics.csv), with the showcase rows cross-checked against [dashboard_showcase_metrics.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_showcase_metrics.csv). The grouping is the selected slice and `calibration` method. The primary plotted columns are `ece_mean`, `brier_mean`, and `log_loss_mean`. All three are grouped means computed from test probabilities after the chosen probability adjustment. The chart therefore compares calibration methods on their exported summary metrics rather than recomputing calibration live inside the dashboard.
+
 ## 5. Explainability
 
 The `Explainability` page asks a different kind of question from the performance and calibration pages. It asks whether the selected models produce understandable explanation patterns and whether those patterns remain stable across sites and rounds.
+
+| Chart / Card | Source file | Primary grouping | Primary value(s) | Split basis | Aggregation meaning |
+| --- | --- | --- | --- | --- | --- |
+| `Which Features Matter Most?` | `dashboard_shap.csv` | selected slice and feature | `mean_abs_shap_mean`, `rank_mean` | saved explanation summaries from evaluation artifacts | each bar is a grouped mean feature-attribution magnitude |
+| `What Pushed This One Prediction Up Or Down?` | `dashboard_local_explanations.csv` | selected slice and feature | `contribution_mean` | representative saved local explanation from the visual verification package | each bar is a grouped mean contribution for one representative explanation row |
+| `Do The Feature Explanations Stay Consistent Over Time?` | `dashboard_stability.csv` | selected slice and round | `spearman_top_feature_stability_mean` | round-wise explanation summaries from federated runs | each point is a grouped mean stability score by round |
+| `Do Different Sites Focus On Similar Features?` | `dashboard_stability.csv` | selected slice and client pair | `top_k_overlap_mean`, `spearman_rank_correlation_mean` | cross-client explanation summaries from the visual verification package | each cell or point summarizes grouped client-pair overlap |
 
 ### 5.1 `Which Features Matter Most?`
 
@@ -572,6 +786,10 @@ This chart supports the thesis claim that the project includes explainable evide
 
 This chart does not prove causal importance. A feature can have a large attribution without being a causal driver of diabetes risk.
 
+#### How this chart was computed and plotted
+
+This chart is built from [dashboard_shap.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_shap.csv). The grouping is the selected slice and `feature` name. The primary plotted value is `mean_abs_shap_mean`, with `rank_mean` used to preserve the feature ordering. The values are grouped mean absolute attribution magnitudes exported from the saved SHAP summaries. This chart belongs to the broad audit package because global feature-importance rows are already aggregated and do not require prediction-level plotting artifacts.
+
 ### 5.2 `What Pushed This One Prediction Up Or Down?`
 
 [Insert Figure R10 here: What Pushed This One Prediction Up Or Down?]
@@ -609,6 +827,10 @@ This chart supports the practical interpretability claim of the project. It show
 #### What this chart does not prove
 
 This chart does not prove that the local explanation is causal, complete, or unique. It is an interpretation aid, not a proof of mechanism.
+
+#### How this chart was computed and plotted
+
+This chart is built from [dashboard_local_explanations.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_visual_summary/dashboard_local_explanations.csv). The grouping is the selected visual slice and `feature`. The primary plotted value is `contribution_mean`, which summarizes the saved representative explanation rows. The split basis is the visual verification package because representative local explanations require prediction-backed artifact files. The chart therefore illustrates how one saved example is decomposed rather than averaging feature effects over the whole test set.
 
 ### 5.3 `Do The Feature Explanations Stay Consistent Over Time?`
 
@@ -652,6 +874,10 @@ This chart supports the thesis claim that the framework audits not only explanat
 
 This chart does not prove that the explanations are correct in a causal sense. It only proves that they are internally stable.
 
+#### How this chart was computed and plotted
+
+This chart is built from [dashboard_stability.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_visual_summary/dashboard_stability.csv). The grouping is the selected slice and `round`. The plotted value is `spearman_top_feature_stability_mean`, which comes from the round-wise feature-rank stability summaries. These values are grouped means over matching saved visual rows. The x-axis is the federated training round, and the y-axis is the stability score, so the line represents how consistently the ranked feature-importance pattern is preserved over time.
+
 ### 5.4 `Do Different Sites Focus On Similar Features?`
 
 [Insert Figure R12 here: Do Different Sites Focus On Similar Features?]
@@ -686,9 +912,19 @@ This chart supports the idea that the federated model is not learning totally di
 
 This chart does not prove that all sites are interchangeable or that no subgroup-specific differences exist. It only addresses overlap in the top explanatory features.
 
+#### How this chart was computed and plotted
+
+This chart also uses [dashboard_stability.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_visual_summary/dashboard_stability.csv), but the grouping is now the selected slice plus the client pair (`client_left`, `client_right`). The primary plotted value is `top_k_overlap_mean`, with `spearman_rank_correlation_mean` available as a companion agreement statistic where present. The values summarize cross-client overlap in the saved top-k feature sets. This makes the chart a direct federated explanation-consistency visualization rather than a pooled-model importance chart.
+
 ## 6. Fairness
 
 The `Fairness` page does not claim formal fairness certification. Instead, it provides subgroup disparity analysis on publicly available variables such as `age_group`, `bmi_category`, and `sex`. This is why the chapter stays careful with wording. The result package identifies where the model behaves differently across groups, but it does not claim that these checks are the final ethical verdict.
+
+| Chart / Card | Source file | Primary grouping | Primary value(s) | Split basis | Aggregation meaning |
+| --- | --- | --- | --- | --- | --- |
+| `How Often Each Group Is Flagged Positive` | `dashboard_fairness.csv` | selected slice, `group_feature`, and `group_value` | `selection_rate_mean` | thresholded test predictions | each point or bar is a grouped mean subgroup positive rate |
+| `How Different The Results Are Between Groups` | `dashboard_fairness.csv` | selected slice and `group_feature` | `demographic_parity_difference_mean`, `equalized_odds_difference_mean` | thresholded test predictions summarized by subgroup family | each cell or bar is a grouped mean disparity score |
+| `What Changes For Each Group When We Raise Or Lower The Decision Rule?` | `dashboard_thresholds.csv` | selected slice, threshold, and `group_feature` | `selection_rate_mean`, `demographic_parity_difference_mean`, `equalized_odds_difference_mean`, plus overall F1 and specificity | threshold sweep over calibration-derived candidate thresholds | each line is a grouped mean subgroup trace by threshold |
 
 ### 6.1 `How Often Each Group Is Flagged Positive`
 
@@ -732,6 +968,10 @@ This chart supports the thesis claim that the framework includes subgroup auditi
 
 This chart does not prove whether the observed subgroup differences are justified or unjustified. It only shows that they exist and need interpretation.
 
+#### How this chart was computed and plotted
+
+This chart is built from [dashboard_fairness.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_fairness.csv). The grouping is the selected slice, `group_feature`, and `group_value`. The primary plotted value is `selection_rate_mean`, which is the grouped mean positive prediction rate for each subgroup under the selected threshold. The split basis is thresholded **test predictions**. This means the chart is a post-threshold subgroup summary rather than a raw score-distribution view.
+
 ### 6.2 `How Different The Results Are Between Groups`
 
 [Insert Figure R14 here: How Different The Results Are Between Groups]
@@ -773,6 +1013,10 @@ This chart supports the thesis claim that the framework measures subgroup dispar
 #### What this chart does not prove
 
 This chart does not prove formal fairness certification, legal compliance, or ethical adequacy. It is an audit signal, not a final normative judgment.
+
+#### How this chart was computed and plotted
+
+This chart also uses [dashboard_fairness.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_fairness.csv). The grouping is the selected slice and `group_feature`. The plotted values are `demographic_parity_difference_mean` and `equalized_odds_difference_mean`, which the dashboard presents as `Positive Rate Gap` and `Error Gap Between Groups`. These are grouped mean disparity values computed from thresholded test predictions. The chart therefore summarizes subgroup disparities at the current operating point rather than over the full threshold sweep.
 
 ### 6.3 `What Changes For Each Group When We Raise Or Lower The Decision Rule?`
 
@@ -819,9 +1063,18 @@ This chart supports a key practical thesis point: the fairness story depends not
 
 This chart does not prove that the exported fairness-conscious threshold is the clinically best threshold. It only proves that threshold choice changes subgroup disparity and that those changes can be measured.
 
+#### How this chart was computed and plotted
+
+This chart is built from [dashboard_thresholds.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_thresholds.csv). The grouping is the selected slice, threshold, and `group_feature`. The plotted values are grouped means such as `selection_rate_mean`, `demographic_parity_difference_mean`, and `equalized_odds_difference_mean`, together with overall metrics like `f1_mean` and `specificity_mean` for context. The threshold values come from the calibration-derived candidate set described earlier, and the dashboard's selected threshold marker corresponds to the slice's chosen decision rule. This chart therefore combines performance and fairness over a threshold sweep rather than reporting one fixed operating point only.
+
 ## 7. Federated Training
 
 The `Federated Training` page turns the project back toward the federated optimization process itself. It answers two questions: how the shared model evolves round by round, and how much communication that process requires.
+
+| Chart / Card | Source file | Primary grouping | Primary value(s) | Split basis | Aggregation meaning |
+| --- | --- | --- | --- | --- | --- |
+| `How Federated Training Improves Round By Round` | `dashboard_rounds.csv` | selected federated slice and `round` | `global_eval_auc_mean`, `global_eval_f1_mean`, `global_eval_ece_mean` | round-wise evaluation summaries | each point is a grouped mean metric value at a given round |
+| `How Much Data Is Sent During Training?` | `dashboard_rounds.csv`, `communication_summary.csv` | selected federated slice and `round` | `communication_bytes_mean`, `cumulative_communication_bytes_mean` | round-wise communication summaries | each bar or line is a grouped mean communication quantity |
 
 ### 7.1 `How Federated Training Improves Round By Round`
 
@@ -876,6 +1129,10 @@ This chart supports the thesis claim that federated optimization is not only pos
 
 This chart does not prove that the same convergence behavior would hold on real hospital infrastructure. It is still a public-data federation simulation.
 
+#### How this chart was computed and plotted
+
+This chart is built from [dashboard_rounds.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_rounds.csv). The grouping is the selected federated slice and `round`. The primary plotted columns are `global_eval_auc_mean`, `global_eval_f1_mean`, and `global_eval_ece_mean`. Each point is therefore the grouped mean of a round-wise evaluation quantity across matching runs. The chart belongs to the broad audit package because the round-wise metrics are already exported as grouped federated summaries.
+
 ### 7.2 `How Much Data Is Sent During Training?`
 
 [Insert Figure R17 here: How Much Data Is Sent During Training?]
@@ -916,9 +1173,17 @@ This chart supports a central clarification in the thesis: federated learning re
 
 This chart does not prove total deployment cost, wall-clock cost, or energy cost by itself. It only proves the communication burden within the current simulation framework.
 
+#### How this chart was computed and plotted
+
+This chart uses [dashboard_rounds.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_rounds.csv) together with [communication_summary.csv](C:/Users/praha/Desktop/Joshna/thesis_assets/full_cdc_polished/tables/communication_summary.csv) or its exported summary equivalent where needed for final totals. The grouping is the selected federated slice and `round`. The plotted values are per-round communication bytes and cumulative communication bytes, both as grouped means. The bars or lines therefore represent model-update traffic rather than any estimate of raw-data movement.
+
 ## 8. Full Study Comparison
 
 The `Full Study Comparison` page is where the broad audit package becomes easiest to interpret as a thesis result. This page compares `Centralized`, `Local-Only`, `Average Local-Only`, and `Federated` directly.
+
+| Chart / Card | Source file | Primary grouping | Primary value(s) | Split basis | Aggregation meaning |
+| --- | --- | --- | --- | --- | --- |
+| `How Centralized, Local-Only, and Federated Compare` | `dashboard_metrics.csv` | `run_type` plus selected model and scenario filters | setup-level `f1_mean`, with AUROC and ECE available as companion values | test metrics under the chosen threshold strategy | each setup summary is a grouped mean across matching rows in the broad audit package |
 
 ### 8.1 `How Centralized, Local-Only, and Federated Compare`
 
@@ -966,6 +1231,10 @@ This chart supports the core thesis result in one sentence: **Centralized remain
 #### What this chart does not prove
 
 This chart does not prove that Federated is always the best choice for every institutional setting. It only proves that it is technically competitive and audit-ready in the current public-data framework.
+
+#### How this chart was computed and plotted
+
+This chart is built from [dashboard_metrics.csv](C:/Users/praha/Desktop/Joshna/results/full_cdc_polished_summary/dashboard_metrics.csv). The grouping is primarily `run_type`, together with any active model, calibration, site, and partition filters. The plotted values are setup-level grouped means such as `f1_mean`, while companion values like `roc_auc_mean`, `pr_auc_mean`, and `ece_mean` provide additional context in the chapter text and dashboard tooltips. Because the chart comes from the broad audit package, it is the correct source for the final comparison claims across `Centralized`, `Local-Only`, `Average Local-Only`, and `Federated`.
 
 ## 9. Overall Results Synthesis
 

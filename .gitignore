@@ -6,6 +6,10 @@ __pycache__/
 .venv/
 venv/
 data/raw/
+!data/
+!data/raw/
+!data/raw/cdc_diabetes_health_indicators.csv
+!data/raw/pima_diabetes.csv
 outputs/
 dashboard_*.out
 dashboard_*.err

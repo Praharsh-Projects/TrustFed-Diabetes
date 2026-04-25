@@ -7,6 +7,7 @@ explainability, fairness checks, communication logging, and a dashboard artifact
 For the exact clone/setup/run steps for the current full-CDC thesis build, use:
 
 - [`docs/RUN_PROJECT.md`](docs/RUN_PROJECT.md)
+- [`docs/HANDOVER_COMPLETE.md`](docs/HANDOVER_COMPLETE.md)
 
 The core experiment engine is dependency-light: `numpy`, `pandas`,
 `scikit-learn`, `plotly`, and `shap`. The interactive audit dashboard uses
@@ -58,10 +59,11 @@ The raw experiment run folders are intentionally not kept in the GitHub package 
 - configs
 - scripts
 - tests
+- both handover datasets in `data/raw/`
 - full-CDC summary artifacts
 - thesis-ready exported evidence
 
-The heavy raw run directories can be regenerated from the commands in [`docs/RUN_PROJECT.md`](docs/RUN_PROJECT.md).
+The heavy raw run directories can be regenerated from the commands in [`docs/RUN_PROJECT.md`](docs/RUN_PROJECT.md) and the professor-facing handover flow in [`docs/HANDOVER_COMPLETE.md`](docs/HANDOVER_COMPLETE.md).
 
 Run the offline smoke experiment:
 
@@ -81,9 +83,20 @@ The config-driven smoke command is:
 py scripts/run_experiment.py --config configs/smoke.json
 ```
 
+## Included Datasets
+
+The repo now includes both datasets directly:
+
+```text
+data/raw/pima_diabetes.csv
+data/raw/cdc_diabetes_health_indicators.csv
+```
+
+That means a clean clone can run the broad two-dataset comparison and the final full-CDC thesis workflow without a separate manual dataset handoff.
+
 ## Using The Pima Dataset
 
-Place a Pima CSV at:
+The included Pima CSV is stored at:
 
 ```text
 data/raw/pima_diabetes.csv
@@ -110,7 +123,7 @@ py scripts/download_datasets.py --dataset pima
 py scripts/download_datasets.py --dataset cdc
 ```
 
-If automatic download fails, place the files manually at:
+If automatic download fails on another machine, the project still expects the files at:
 
 ```text
 data/raw/pima_diabetes.csv

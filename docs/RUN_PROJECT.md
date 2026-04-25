@@ -10,6 +10,7 @@ This repository includes:
 - configs
 - scripts
 - tests
+- both handover datasets in `data/raw/`
 - lightweight full-CDC summary artifacts
 - thesis-ready exported tables and figures
 
@@ -49,23 +50,38 @@ Then activate again:
 .venv\Scripts\Activate.ps1
 ```
 
-## 5. Put the dataset in the expected location
+## 5. Verify the datasets are present
 
-Place the CDC dataset CSV here:
+This repo should already contain both datasets:
 
 ```text
+data/raw/pima_diabetes.csv
 data/raw/cdc_diabetes_health_indicators.csv
 ```
 
-If you want to try automatic download first:
+Verify them:
 
 ```powershell
+Get-Item data/raw/cdc_diabetes_health_indicators.csv
+Get-Item data/raw/pima_diabetes.csv
+```
+
+If you need to recreate them on another machine, you can still try automatic download:
+
+```powershell
+py scripts/download_datasets.py --dataset pima
 py scripts/download_datasets.py --dataset cdc
 ```
 
-If automatic download fails, place the file manually in `data/raw/`.
+If automatic download fails, place the files manually in `data/raw/`.
 
-## 6. Run the dashboard from the included full-CDC summaries
+## 6. Run tests first
+
+```powershell
+py -m unittest tests.test_core
+```
+
+## 7. Run the dashboard from the included full-CDC summaries
 
 This is the fastest way to open the thesis dashboard without retraining:
 
@@ -79,7 +95,18 @@ Then open:
 http://127.0.0.1:8057
 ```
 
-## 7. Reproduce the full-CDC broad audit run
+## 8. Reproduce the broad two-dataset comparison run
+
+This is the broader supporting comparison package that includes both `Pima` and the capped `CDC` comparison matrix:
+
+```powershell
+py scripts/run_matrix.py --config configs/polished_core.json
+py scripts/aggregate_results.py --results-dir results/polished_runs --output-dir results/polished_summary
+py scripts/validate_dashboard_artifacts.py --summary-dir results/polished_summary
+py scripts/export_thesis_assets.py --summary-dir results/polished_summary --output-dir thesis_assets/polished
+```
+
+## 9. Reproduce the full-CDC broad audit run
 
 This reruns the full-data CDC thesis experiment matrix:
 
@@ -99,7 +126,7 @@ Validate the summary:
 py scripts/validate_dashboard_artifacts.py --summary-dir results/full_cdc_polished_summary
 ```
 
-## 8. Reproduce the full-CDC visual artifact run
+## 10. Reproduce the full-CDC visual artifact run
 
 This creates the saved prediction-based artifacts used by the showcase visuals:
 
@@ -119,7 +146,7 @@ Validate the visual summary:
 py scripts/validate_dashboard_artifacts.py --summary-dir results/full_cdc_visual_summary
 ```
 
-## 9. Export thesis-ready assets
+## 11. Export thesis-ready assets
 
 ```powershell
 py scripts/export_thesis_assets.py --summary-dir results/full_cdc_polished_summary --output-dir thesis_assets/full_cdc_polished
@@ -131,19 +158,13 @@ This generates:
 - HTML figures
 - conclusion summary files
 
-## 10. Open the final dashboard after rerunning everything
+## 12. Open the final dashboard after rerunning everything
 
 ```powershell
 py scripts/run_dashboard.py --results-dir results/full_cdc_polished_summary --visual-results-dir results/full_cdc_visual_summary --port 8057
 ```
 
-## 11. Run tests
-
-```powershell
-py -m unittest tests.test_core
-```
-
-## 12. Important interpretation note
+## 13. Important interpretation note
 
 The confusion matrices in the dashboard show the **held-out test split**, not all rows mixed together. That is correct methodology.
 
@@ -152,7 +173,7 @@ For the full CDC dataset:
 - raw data size is about `253,680` rows
 - the dashboard confusion matrices reflect the **test fold** of that full dataset
 
-## 13. GitHub update workflow
+## 14. GitHub update workflow
 
 After making changes:
 
