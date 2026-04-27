@@ -1020,7 +1020,7 @@ def _resolve_visual_row(frame: pd.DataFrame, row: pd.Series | None) -> tuple[pd.
     if candidates.empty:
         return None, False
 
-    hard_filters = ["dataset", "experiment_track", "run_type", "threshold_strategy"]
+    hard_filters = ["dataset", "run_type", "threshold_strategy"]
     for column in hard_filters:
         if column in candidates.columns and column in row.index:
             candidates = candidates[candidates[column].astype(str) == str(row[column])]
