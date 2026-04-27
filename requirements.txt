@@ -8,3 +8,4 @@ dash-echarts==0.0.12.9
 ucimlrepo>=0.0.7
 fairlearn>=0.10
 xgboost>=3.2
+waitress>=3.0

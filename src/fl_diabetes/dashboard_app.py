@@ -88,12 +88,10 @@ ACCENT = {
 }
 
 
-def run_dashboard(
+def create_dashboard_app(
     results_dir: str | Path = "results/summary",
     visual_results_dir: str | Path | None = None,
-    host: str = "127.0.0.1",
-    port: int = 8050,
-) -> None:
+):
     global DashECharts
     try:
         from dash import Dash, Input, Output, dcc, html
@@ -451,6 +449,16 @@ def run_dashboard(
             study_note,
         )
 
+    return app
+
+
+def run_dashboard(
+    results_dir: str | Path = "results/summary",
+    visual_results_dir: str | Path | None = None,
+    host: str = "127.0.0.1",
+    port: int = 8050,
+) -> None:
+    app = create_dashboard_app(results_dir=results_dir, visual_results_dir=visual_results_dir)
     print(f"Dashboard running at http://{host}:{port}")
     app.run(host=host, port=port, debug=False)
 

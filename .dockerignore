@@ -1,0 +1,16 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+outputs
+dashboard_*.out
+dashboard_*.err
+tmp_dashboard_*
+data.zip
+MT.pdf
+*.jpg

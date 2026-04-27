@@ -72,6 +72,115 @@ Then open:
 http://127.0.0.1:8050
 ```
 
+## Deploy the same bundled dashboard
+
+This repo now includes a production entrypoint in `app.py` and a `Dockerfile`, so you can deploy the bundled final dashboard without retraining.
+
+### Local production-style run
+
+After installing the requirements, you can run the deployable entrypoint directly:
+
+```powershell
+python app.py
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8050
+```
+
+### Docker run
+
+Build the image:
+
+```powershell
+docker build -t trustfed-diabetes .
+```
+
+Run the container:
+
+```powershell
+docker run -p 8050:8050 trustfed-diabetes
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8050
+```
+
+### Deploy on a cloud host
+
+Any host that can run a Python container can serve this project directly from the bundled `results/full_cdc_polished_summary/` folder.
+
+- default start command: `python app.py`
+- default port: `8050`
+- host binding: `0.0.0.0`
+
+If your platform injects a `PORT` environment variable, `app.py` uses it automatically.
+
+## Deploy a free public live link on Hugging Face Spaces
+
+This project now includes a Space-ready deployment bundle and a publisher script.
+
+### 1. Build the Space bundle
+
+```powershell
+py scripts/build_hf_space_bundle.py
+```
+
+This creates a deployment subset in:
+
+```text
+deploy/huggingface-space
+```
+
+It includes only:
+
+- `app.py`
+- `Dockerfile`
+- `requirements.txt`
+- `src/fl_diabetes/`
+- the runtime dashboard files from `results/full_cdc_polished_summary/`
+
+It excludes datasets, tests, configs, local logs, and unused large training-summary files.
+
+### 2. Publish the Space
+
+Install the Hugging Face Hub client:
+
+```powershell
+py -m pip install huggingface_hub
+```
+
+Set your Hugging Face token in PowerShell:
+
+```powershell
+$env:HF_TOKEN="your_hugging_face_token"
+```
+
+Publish the public Docker Space:
+
+```powershell
+py scripts/publish_hf_space.py --space-id YOUR_USERNAME/trustfed-diabetes-live
+```
+
+If the Space does not exist yet, the script creates it as a public Docker Space and uploads the deployment bundle.
+
+The live link will be:
+
+```text
+https://huggingface.co/spaces/YOUR_USERNAME/trustfed-diabetes-live
+```
+
+Important note:
+
+- this deployment is view-only
+- it serves the bundled final results
+- it does not retrain any models
+- free Spaces can cold-start after being idle
+
 ## Why the results are the same without training
 
 The folder `results/full_cdc_polished_summary/` already contains the precomputed final dashboard tables.
