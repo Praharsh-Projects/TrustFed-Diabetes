@@ -1,232 +1,130 @@
 # TrustFed-Diabetes
 
-This workspace contains a runnable implementation for the thesis proposal:
-privacy-preserving diabetes prediction with federated simulation, calibration,
-explainability, fairness checks, communication logging, and a dashboard artifact.
+This repository is a **run-only handover package** for the final diabetes federated-learning dashboard.
 
-For the exact clone/setup/run steps for the current full-CDC thesis build, use:
+It is designed so that another machine can:
 
-- [`docs/RUN_PROJECT.md`](docs/RUN_PROJECT.md)
-- [`docs/HANDOVER_COMPLETE.md`](docs/HANDOVER_COMPLETE.md)
+- clone the repo
+- install the dependencies
+- open the **same final bundled results**
+- do that **without retraining the models**
 
-The core experiment engine is dependency-light: `numpy`, `pandas`,
-`scikit-learn`, `plotly`, and `shap`. The interactive audit dashboard uses
-Dash, and public UCI dataset downloads use `ucimlrepo` when available.
+## What this repo includes
 
-## What Is Built
+- runnable project code under `src/`
+- launcher and reproducibility scripts under `scripts/`
+- both datasets in:
+  - `data/raw/cdc_diabetes_health_indicators.csv`
+  - `data/raw/pima_diabetes.csv`
+- the bundled final result package in:
+  - `results/full_cdc_polished_summary/`
+- the final full-CDC retraining configs:
+  - `configs/full_cdc_polished.json`
+  - `configs/full_cdc_visual_verify.json`
+- a small verification test suite in `tests/test_core.py`
 
-- Public-data-ready loaders for the Pima Indians Diabetes dataset, plus an
-  offline synthetic diabetes-like fallback for smoke tests.
-- IID and non-IID Dirichlet client partitioning.
-- Centralized baselines for Logistic Regression, Random Forest, Gradient
-  Boosting, Decision Tree, shallow MLP, and XGBoost.
-- NumPy federated simulators for logistic regression and shallow MLP with
-  `fedavg` and `fedprox`.
-- Global and federated post-hoc probability calibration with isotonic or
-  sigmoid scaling.
-- Decision-threshold tuning from the calibration split for F1-oriented and
-  Youden-J operating points.
-- Metrics for performance, calibration, fairness, communication cost, and
-  explanation stability.
-- SHAP summary generation with a deterministic fallback for linear models.
-- Static Plotly dashboard generation from saved experiment artifacts.
-- Interactive Dash audit dashboard over curated aggregate tables.
-- Showcase-first dashboard mode with ROC/PR curves, confusion matrices, score
-  distributions, and threshold tradeoff visuals backed by saved prediction
-  artifacts.
-- Config-driven experiment matrix execution.
-- Dashboard artifact validation and thesis asset export for figures and tables.
+This repo does **not** include:
 
-## Quick Start
+- LaTeX thesis source files
+- huge raw training-run folders
+- old thesis-export bundles that are not needed to run the project
 
-To open the included full-CDC dashboard without retraining:
+## Fastest way to get the same final results without retraining
+
+Clone the repo:
 
 ```powershell
-py scripts/run_dashboard.py --results-dir results/full_cdc_polished_summary --visual-results-dir results/full_cdc_visual_summary --port 8057
+git clone https://github.com/Praharsh-Projects/TrustFed-Diabetes.git
+cd TrustFed-Diabetes
+```
+
+Create and activate a virtual environment:
+
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+If PowerShell blocks activation:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.venv\Scripts\Activate.ps1
+```
+
+Optional environment check:
+
+```powershell
+py -m unittest tests.test_core
+```
+
+Run the dashboard from the bundled final results:
+
+```powershell
+py scripts/run_dashboard.py
 ```
 
 Then open:
 
 ```text
-http://127.0.0.1:8057
+http://127.0.0.1:8050
 ```
 
-## Reproducibility Note
+## Why the results are the same without training
 
-The raw experiment run folders are intentionally not kept in the GitHub package because they are extremely large. The repository keeps:
+The folder `results/full_cdc_polished_summary/` already contains the precomputed final dashboard tables.
 
-- source code
-- configs
-- scripts
-- tests
-- both handover datasets in `data/raw/`
-- full-CDC summary artifacts
-- thesis-ready exported evidence
+That means:
 
-The heavy raw run directories can be regenerated from the commands in [`docs/RUN_PROJECT.md`](docs/RUN_PROJECT.md) and the professor-facing handover flow in [`docs/HANDOVER_COMPLETE.md`](docs/HANDOVER_COMPLETE.md).
+- opening the dashboard reads saved CSV outputs
+- it does **not** retrain the models
+- the displayed results should therefore match the shipped result bundle on another machine
 
-Run the offline smoke experiment:
+This is the correct path if your goal is to review the final project evidence and dashboard exactly as packaged.
+
+## Optional: retrain the final full-CDC project from scratch
+
+Use this only if you want to regenerate the full experiment outputs.
+
+Run the final full-CDC matrix:
 
 ```powershell
-py scripts/run_experiment.py --dataset synthetic --synthetic-samples 500 --rounds 4 --local-epochs 1 --output-dir outputs/synthetic_smoke
+py scripts/run_matrix.py --config configs/full_cdc_polished.json
 ```
 
-Open the generated dashboard:
-
-```text
-outputs/synthetic_smoke/dashboard.html
-```
-
-The config-driven smoke command is:
+Aggregate the results:
 
 ```powershell
-py scripts/run_experiment.py --config configs/smoke.json
+py scripts/aggregate_results.py --results-dir results/full_cdc_polished_runs --output-dir results/full_cdc_polished_summary
 ```
 
-## Included Datasets
+Validate the dashboard artifacts:
 
-The repo now includes both datasets directly:
+```powershell
+py scripts/validate_dashboard_artifacts.py --summary-dir results/full_cdc_polished_summary
+```
+
+Open the dashboard:
+
+```powershell
+py scripts/run_dashboard.py
+```
+
+Note: if you retrain from scratch on another machine, the results should be very close, but tiny differences can still happen because of library versions and numerical training behavior.
+
+## Included datasets
+
+The repo already includes both datasets:
 
 ```text
-data/raw/pima_diabetes.csv
 data/raw/cdc_diabetes_health_indicators.csv
-```
-
-That means a clean clone can run the broad two-dataset comparison and the final full-CDC thesis workflow without a separate manual dataset handoff.
-
-## Using The Pima Dataset
-
-The included Pima CSV is stored at:
-
-```text
 data/raw/pima_diabetes.csv
 ```
 
-The loader accepts either standard column names:
+## Important interpretation note
 
-```text
-Pregnancies,Glucose,BloodPressure,SkinThickness,Insulin,BMI,DiabetesPedigreeFunction,Age,Outcome
-```
+The confusion matrix in the dashboard shows the **held-out test fold**, not all `253,680` CDC rows mixed together.
 
-or a CSV where the final column is the target.
-
-Then run:
-
-```powershell
-py scripts/run_experiment.py --dataset pima --data-path data/raw/pima_diabetes.csv --output-dir outputs/pima_fedavg
-```
-
-Download public datasets when network access is available:
-
-```powershell
-py scripts/download_datasets.py --dataset pima
-py scripts/download_datasets.py --dataset cdc
-```
-
-If automatic download fails on another machine, the project still expects the files at:
-
-```text
-data/raw/pima_diabetes.csv
-data/raw/cdc_diabetes_health_indicators.csv
-```
-
-## Useful Experiment Variants
-
-Non-IID experiment with stronger heterogeneity:
-
-```powershell
-py scripts/run_experiment.py --dataset synthetic --partition non_iid --alpha 0.3 --output-dir outputs/non_iid_alpha_03
-```
-
-Sigmoid calibration:
-
-```powershell
-py scripts/run_experiment.py --dataset synthetic --calibration sigmoid --output-dir outputs/sigmoid_calibration
-```
-
-F1-oriented decision threshold tuning:
-
-```powershell
-py scripts/run_experiment.py --dataset synthetic --decision-threshold-strategy calib_f1_optimal --output-dir outputs/f1_threshold_view
-```
-
-## Output Artifacts
-
-Each run writes:
-
-- `summary.json`: experiment configuration and headline metrics.
-- `metrics.csv`: centralized and federated performance/calibration metrics.
-- `round_history.csv`: federated training dynamics and communication cost.
-- `calibration_bins.csv`: reliability diagram bins.
-- `fairness.csv`: subgroup selection, TPR/FPR, demographic parity, and equalized
-  odds summaries.
-- `shap_summary.csv`: top feature attributions.
-- `stability.csv`: explanation/ranking stability over FL rounds.
-- `dashboard.html`: static dashboard for review/demo.
-- `client_manifest.csv`: reproducible client row assignments.
-- `client_metrics.csv`: per-client federated validation metrics.
-- `communication.csv`: server/client communication accounting.
-- `local_explanations.csv`: local instance explanation rows.
-- `test_predictions.csv` and `calibration_predictions.csv` when
-  `save_prediction_artifacts` is enabled for showcase-style reruns.
-
-Aggregate and export thesis assets:
-
-```powershell
-py scripts/run_matrix.py --config configs/core.json
-py scripts/aggregate_results.py --results-dir results/runs --output-dir results/summary
-py scripts/export_thesis_assets.py --summary-dir results/summary --output-dir thesis_assets
-```
-
-Polished smoke and thesis-grade runs:
-
-```powershell
-py scripts/run_matrix.py --config configs/polished_smoke.json
-py scripts/aggregate_results.py --results-dir results/polished_smoke_runs --output-dir results/polished_smoke_summary
-py scripts/validate_dashboard_artifacts.py --summary-dir results/polished_smoke_summary
-py scripts/export_thesis_assets.py --summary-dir results/polished_smoke_summary --output-dir thesis_assets/polished_smoke
-
-py scripts/run_matrix.py --config configs/polished_core.json
-py scripts/aggregate_results.py --results-dir results/polished_runs --output-dir results/polished_summary
-py scripts/validate_dashboard_artifacts.py --summary-dir results/polished_summary
-py scripts/export_thesis_assets.py --summary-dir results/polished_summary --output-dir thesis_assets/polished
-```
-
-Run the interactive dashboard:
-
-```powershell
-py scripts/run_dashboard.py --results-dir results/polished_smoke_summary
-```
-
-Showcase-first score track:
-
-```powershell
-py scripts/run_matrix.py --config configs/showcase_smoke.json
-py scripts/aggregate_results.py --results-dir results/showcase_smoke_runs --output-dir results/showcase_smoke_summary
-py scripts/validate_dashboard_artifacts.py --summary-dir results/showcase_smoke_summary
-py scripts/export_thesis_assets.py --summary-dir results/showcase_smoke_summary --output-dir thesis_assets/showcase_smoke
-
-py scripts/run_matrix.py --config configs/showcase_core.json
-py scripts/aggregate_results.py --results-dir results/showcase_runs --output-dir results/showcase_summary
-py scripts/validate_dashboard_artifacts.py --summary-dir results/showcase_summary
-py scripts/export_thesis_assets.py --summary-dir results/showcase_summary --output-dir thesis_assets/showcase
-py scripts/run_dashboard.py --results-dir results/showcase_summary
-```
-
-## Proposal Alignment
-
-The proposal asks for a federated learning framework for diabetes prediction
-that compares ML/DL models, handles IID and non-IID settings, adds SHAP-based
-explainability, and improves probability reliability through calibration.
-
-The blueprint adds reviewer-facing rigor: measurable research questions,
-calibration metrics, fairness, communication cost, and explanation stability.
-This implementation produces those measurable artifacts so the thesis can move
-from concept to repeatable experiments.
-
-## Next Build Steps
-
-1. Run the full `configs/polished_core.json` matrix after confirming runtime budget.
-2. Review `results/polished_summary/dashboard_metrics.csv` and exported tables for thesis evidence.
-3. Use `thesis_assets/polished/figures/*.html` as figure sources.
-4. Treat synthetic runs as smoke tests only; do not use them as thesis evidence.
+That is why the confusion counts do not sum to the full raw dataset size. This is the correct evaluation setup.

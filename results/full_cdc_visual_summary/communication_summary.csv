@@ -1,9 +1,0 @@
-dataset,experiment_track,clients,partition,alpha,run_type,algorithm,model,calibration,threshold_strategy,cumulative_communication_bytes_mean,cumulative_communication_bytes_std,cumulative_communication_bytes_ci95_low,cumulative_communication_bytes_ci95_high,cumulative_communication_bytes_n
-cdc,audit,3,iid,0.5,federated,fedavg,logistic,none,calib_f1_optimal,31680.0,0.0,31680.0,31680.0,1
-cdc,audit,3,iid,0.5,federated,fedprox,logistic,none,calib_f1_optimal,31680.0,0.0,31680.0,31680.0,1
-cdc,audit,3,non_iid,0.5,federated,fedavg,logistic,none,calib_f1_optimal,31680.0,0.0,31680.0,31680.0,1
-cdc,audit,3,non_iid,0.5,federated,fedprox,logistic,none,calib_f1_optimal,31680.0,0.0,31680.0,31680.0,1
-cdc,audit,5,iid,0.5,federated,fedavg,logistic,none,calib_f1_optimal,70400.0,0.0,70400.0,70400.0,1
-cdc,audit,5,iid,0.5,federated,fedprox,logistic,none,calib_f1_optimal,70400.0,0.0,70400.0,70400.0,1
-cdc,audit,5,non_iid,0.5,federated,fedavg,logistic,none,calib_f1_optimal,70400.0,0.0,70400.0,70400.0,1
-cdc,audit,5,non_iid,0.5,federated,fedprox,logistic,none,calib_f1_optimal,70400.0,0.0,70400.0,70400.0,1

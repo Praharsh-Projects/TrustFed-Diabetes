@@ -330,10 +330,11 @@ class CorePipelineTests(unittest.TestCase):
             self.assertTrue(required_columns.issubset(set(calibration_predictions.columns)))
             self.assertTrue(test_predictions["predicted_label"].isin([0, 1]).all())
 
-    def test_showcase_core_config_uses_full_cdc(self) -> None:
-        raw = (ROOT / "configs" / "showcase_core.json").read_text(encoding="utf-8")
-        self.assertIn('"dataset": "cdc"', raw)
-        self.assertNotIn('"max_rows"', raw.split('"dataset": "cdc"', 1)[1].split("}", 1)[0])
+    def test_final_full_cdc_configs_use_uncapped_cdc(self) -> None:
+        for name in ["full_cdc_polished.json", "full_cdc_visual_verify.json"]:
+            raw = (ROOT / "configs" / name).read_text(encoding="utf-8")
+            self.assertIn('"dataset": "cdc"', raw)
+            self.assertNotIn('"max_rows"', raw.split('"dataset": "cdc"', 1)[1].split("}", 1)[0])
 
 
 if __name__ == "__main__":

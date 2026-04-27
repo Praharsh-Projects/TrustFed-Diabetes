@@ -5,6 +5,7 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+data.zip
 data/raw/
 !data/
 !data/raw/
@@ -14,6 +15,7 @@ outputs/
 dashboard_*.out
 dashboard_*.err
 tmp_dashboard_*
+thesis_assets/
 MT.pdf
 a3954a1c-cd1d-409c-a74d-ef95e5c1c06a.jpg
 a8630fd9-325d-4149-96b3-94059102791e.jpg
@@ -22,13 +24,9 @@ results/**
 !results/
 !results/full_cdc_polished_summary/
 !results/full_cdc_polished_summary/**
-!results/full_cdc_visual_summary/
-!results/full_cdc_visual_summary/**
+results/full_cdc_polished_summary/all_*
+results/full_cdc_polished_summary/metrics_summary.csv
+results/full_cdc_polished_summary/communication_summary.csv
+results/full_cdc_polished_summary/aggregation_report.json
 results/full_cdc_polished_summary/all_threshold_sweeps.csv
 results/full_cdc_polished_summary/dashboard_thresholds.csv
-results/full_cdc_visual_summary/all_threshold_sweeps.csv
-results/full_cdc_visual_summary/dashboard_thresholds.csv
-thesis_assets/**
-!thesis_assets/
-!thesis_assets/full_cdc_polished/
-!thesis_assets/full_cdc_polished/**

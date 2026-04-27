@@ -24,13 +24,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     default_results = ROOT / "results" / "full_cdc_polished_summary"
-    fallback_results = ROOT / "results" / "polished_summary"
-    default_visual = ROOT / "results" / "full_cdc_visual_summary"
-    fallback_visual = ROOT / "results" / "polished_visual_verify_summary"
-    results_dir = args.results_dir or (str(default_results) if default_results.exists() else str(fallback_results))
-    visual_results_dir = args.visual_results_dir or (
-        str(default_visual) if default_visual.exists() else (str(fallback_visual) if fallback_visual.exists() else None)
-    )
+    results_dir = args.results_dir or str(default_results)
+    visual_results_dir = args.visual_results_dir
     run_dashboard(
         results_dir=results_dir,
         visual_results_dir=visual_results_dir,

@@ -408,8 +408,8 @@ def run_dashboard(
         performance_cards = _performance_cards(data.metrics, criteria)
         performance_fig = _performance_echart(data.metrics, criteria)
         performance_note = _performance_note(data.metrics, criteria)
-        calibration_curve = _calibration_curve_echart(data.calibration, criteria)
-        calibration_hist = _calibration_hist_echart(data.calibration, criteria)
+        calibration_curve = _calibration_curve_echart(data.calibration, data.metrics, criteria)
+        calibration_hist = _calibration_hist_echart(data.calibration, data.metrics, criteria)
         calibration_compare = _calibration_compare_echart(data.metrics, criteria)
         xai_bar = _xai_bar(data.shap, criteria)
         local_waterfall = _local_explanation_figure(data.local_explanations, criteria)
@@ -509,7 +509,11 @@ def _load_dashboard_data(results_dir: Path, visual_results_dir: Path | None = No
 
 def _read(path: Path) -> pd.DataFrame:
     if not path.exists():
-        return pd.DataFrame()
+        gz_path = path.with_suffix(path.suffix + ".gz") if path.suffix else path.with_name(path.name + ".gz")
+        if gz_path.exists():
+            path = gz_path
+        else:
+            return pd.DataFrame()
     try:
         return pd.read_csv(path, low_memory=False)
     except pd.errors.EmptyDataError:
@@ -521,13 +525,6 @@ def _read_preferred(results_dir: Path, visual_results_dir: Path | None, filename
     if visual_results_dir is not None:
         preferred_paths.append(visual_results_dir / filename)
     preferred_paths.append(results_dir / filename)
-    if visual_results_dir is None:
-        for sibling in [
-            results_dir.parent / "polished_visual_verify_summary",
-            results_dir.parent / "showcase_summary",
-        ]:
-            if sibling != results_dir:
-                preferred_paths.append(sibling / filename)
     for path in preferred_paths:
         frame = _read(path)
         if not frame.empty:
@@ -536,20 +533,10 @@ def _read_preferred(results_dir: Path, visual_results_dir: Path | None, filename
 
 
 def _discover_visual_results_dir(results_dir: Path, requested: Path | None) -> Path | None:
-    candidates: list[Path] = []
-    if requested is not None:
-        candidates.append(requested)
-    candidates.extend(
-        [
-            results_dir.parent / "polished_visual_verify_summary",
-            results_dir.parent / "showcase_summary",
-        ]
-    )
-    for candidate in candidates:
-        if candidate is None or candidate == results_dir:
-            continue
-        if (candidate / "dashboard_curves.csv").exists() or (candidate / "dashboard_confusion.csv").exists():
-            return candidate
+    if requested is None or requested == results_dir:
+        return None
+    if (requested / "dashboard_curves.csv").exists() or (requested / "dashboard_confusion.csv").exists():
+        return requested
     return None
 
 
@@ -1422,22 +1409,124 @@ def _performance_echart(metrics: pd.DataFrame, criteria: dict[str, str | None]) 
     }
 
 
-def _calibration_curve_echart(calibration: pd.DataFrame, criteria: dict[str, str | None]) -> dict:
+def _category_metric_summary(
+    frame: pd.DataFrame,
+    category_column: str,
+    value_column: str,
+    *,
+    label_builder=None,
+) -> pd.DataFrame:
+    if frame.empty or category_column not in frame.columns or value_column not in frame.columns:
+        return pd.DataFrame()
+    working = frame.copy()
+    working[value_column] = pd.to_numeric(working[value_column], errors="coerce")
+    working = working.dropna(subset=[value_column])
+    if working.empty:
+        return pd.DataFrame()
+    if label_builder is None:
+        working["_label"] = working[category_column].map(_humanize).astype(str)
+    else:
+        working["_label"] = working.apply(label_builder, axis=1).astype(str)
+    summary = (
+        working.groupby([category_column, "_label"], dropna=False)[value_column]
+        .agg(["mean", "std", "count", "min", "max"])
+        .reset_index()
+    )
+    summary["std"] = pd.to_numeric(summary["std"], errors="coerce").fillna(0.0)
+    counts = pd.to_numeric(summary["count"], errors="coerce").fillna(0).clip(lower=1)
+    half_width = 1.96 * summary["std"] / np.sqrt(counts)
+    summary["ci_low"] = summary["mean"] - half_width
+    summary["ci_high"] = summary["mean"] + half_width
+    return summary
+
+
+def _is_broad_selection(criteria: dict[str, str | None], keys: tuple[str, ...] | None = None) -> bool:
+    keys = keys or ("run_type", "model", "algorithm", "calibration", "clients", "partition", "alpha")
+    return any(criteria.get(key) is None for key in keys)
+
+
+def _calibration_quality_summary(metrics: pd.DataFrame, criteria: dict[str, str | None]) -> pd.DataFrame:
+    frame = _apply_filters(metrics, criteria)
+    if frame.empty or "calibration" not in frame.columns or "ece_mean" not in frame.columns:
+        return pd.DataFrame()
+    summary = _category_metric_summary(frame, "calibration", "ece_mean").sort_values(["mean", "_label"], ascending=[True, True])
+    if summary.empty:
+        return pd.DataFrame()
+    summary["calibration"] = summary["calibration"].astype(str)
+    summary["_label"] = summary["_label"].astype(str)
+    return summary
+
+
+def _ordered_calibration_labels(
+    calibration: pd.DataFrame,
+    metrics: pd.DataFrame,
+    criteria: dict[str, str | None],
+    *,
+    limit: int | None = None,
+) -> list[str]:
+    summary = _calibration_quality_summary(metrics, criteria)
+    if summary.empty:
+        if calibration.empty:
+            return []
+        labels = sorted(str(value) for value in calibration["calibration_label"].dropna().astype(str).unique())
+        return labels[:limit] if limit is not None else labels
+    keep_labels = summary["_label"].tolist()
+    if limit is not None and len(keep_labels) > limit:
+        top = summary.head(limit).copy()
+        baseline = summary[summary["calibration"].eq("none")]
+        if not baseline.empty:
+            top = pd.concat([top, baseline], ignore_index=True)
+        keep_labels = top.drop_duplicates(subset=["calibration"])["_label"].tolist()
+    return keep_labels
+
+
+def _aggregate_calibration_bins(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    group_columns = [column for column in ["calibration", "calibration_label", "bin", "lower", "upper"] if column in frame.columns]
+    aggregated = frame.groupby(group_columns, dropna=False, as_index=False).mean(numeric_only=True)
+    sort_columns = [column for column in ["calibration_label", "lower", "upper", "bin", "avg_predicted_risk_mean"] if column in aggregated.columns]
+    if sort_columns:
+        aggregated = aggregated.sort_values(sort_columns)
+    return aggregated
+
+
+def _calibration_curve_echart(calibration: pd.DataFrame, metrics: pd.DataFrame, criteria: dict[str, str | None]) -> dict:
     frame = _apply_filters(calibration, criteria)
     if frame.empty:
         return _empty_echart("No aggregated probability-adjustment bins are available for this selection.", "Do The Risk Percentages Match Reality?")
+    frame = _aggregate_calibration_bins(frame)
+    broad_mode = _is_broad_selection(criteria)
+    ordered_labels = _ordered_calibration_labels(frame, metrics, criteria, limit=5 if broad_mode else None)
+    if ordered_labels:
+        frame = frame[frame["calibration_label"].astype(str).isin(ordered_labels)]
+        frame["__label_rank"] = pd.Categorical(frame["calibration_label"].astype(str), categories=ordered_labels, ordered=True)
+        frame = frame.sort_values(["__label_rank", "avg_predicted_risk_mean"]).drop(columns="__label_rank")
+    if frame.empty:
+        return _empty_echart("No readable probability-adjustment curves are available for this selection.", "Do The Risk Percentages Match Reality?")
+    visible_labels = frame["calibration_label"].dropna().astype(str).unique().tolist()
+    show_bands = (criteria.get("calibration") is not None or len(visible_labels) <= 2) and not broad_mode
     series: list[dict] = []
     palette = px.colors.qualitative.Plotly
-    for idx, (label, group) in enumerate(frame.groupby("calibration_label", dropna=False)):
-        group = group.sort_values("avg_predicted_risk_mean")
+    for idx, label in enumerate(visible_labels):
+        group = frame[frame["calibration_label"].astype(str) == label].sort_values("avg_predicted_risk_mean")
         x = pd.to_numeric(group["avg_predicted_risk_mean"], errors="coerce").fillna(0.0).tolist()
         y = pd.to_numeric(group["observed_event_rate_mean"], errors="coerce").fillna(0.0).tolist()
         color = palette[idx % len(palette)]
-        if {"observed_event_rate_ci95_low", "observed_event_rate_ci95_high"}.issubset(group.columns):
+        if show_bands and {"observed_event_rate_ci95_low", "observed_event_rate_ci95_high"}.issubset(group.columns):
             low = pd.to_numeric(group["observed_event_rate_ci95_low"], errors="coerce").fillna(pd.to_numeric(group["observed_event_rate_mean"], errors="coerce")).tolist()
             high = pd.to_numeric(group["observed_event_rate_ci95_high"], errors="coerce").fillna(pd.to_numeric(group["observed_event_rate_mean"], errors="coerce")).tolist()
             series.extend(_band_series(x, low, high, color=color, stack=f"cal_{idx}"))
-        series.append(_line_series(str(label), x, y, color=color, show_symbol=True))
+        series.append(
+            _line_series(
+                str(label),
+                x,
+                y,
+                color=color,
+                show_symbol=not broad_mode,
+                smooth=broad_mode,
+            )
+        )
     series.append(
         {
             "name": "Perfect calibration",
@@ -1445,6 +1534,8 @@ def _calibration_curve_echart(calibration: pd.DataFrame, criteria: dict[str, str
             "data": [[0, 0], [1, 1]],
             "showSymbol": False,
             "lineStyle": {"color": "#8B97A6", "type": "dashed", "width": 2},
+            "tooltip": {"show": False},
+            "silent": True,
         }
     )
     return {
@@ -1452,7 +1543,7 @@ def _calibration_curve_echart(calibration: pd.DataFrame, criteria: dict[str, str
         "title": _echart_title("Do The Risk Percentages Match Reality?"),
         "tooltip": _echart_tooltip(),
         "toolbox": _echart_toolbox(),
-        "legend": _echart_legend(top=14),
+        "legend": {**_echart_legend(top=14), "type": "scroll"},
         "grid": {"left": 72, "right": 28, "top": 72, "bottom": 58},
         "xAxis": _echart_axis("Average predicted risk", min_value=0, max_value=1),
         "yAxis": _echart_axis("Observed event rate", min_value=0, max_value=1),
@@ -1460,16 +1551,27 @@ def _calibration_curve_echart(calibration: pd.DataFrame, criteria: dict[str, str
     }
 
 
-def _calibration_hist_echart(calibration: pd.DataFrame, criteria: dict[str, str | None]) -> dict:
+def _calibration_hist_echart(calibration: pd.DataFrame, metrics: pd.DataFrame, criteria: dict[str, str | None]) -> dict:
     frame = _apply_filters(calibration, criteria)
     if frame.empty:
         return _empty_echart("No probability-range counts are available for this selection.", "How Many Cases Fall Into Each Risk Range")
-    frame = frame.copy()
+    frame = _aggregate_calibration_bins(frame).copy()
     if {"lower", "upper"}.issubset(frame.columns):
         frame["bin_label"] = frame.apply(lambda row: f"{float(row['lower']):.1f}-{float(row['upper']):.1f}", axis=1)
     else:
         frame["bin_label"] = frame["bin"].astype(str)
+    ordered_labels = _ordered_calibration_labels(frame, metrics, criteria)
+    if ordered_labels:
+        frame = frame[frame["calibration_label"].astype(str).isin(ordered_labels)]
+        row_order = {label: idx for idx, label in enumerate(ordered_labels)}
+    else:
+        row_order = {}
     pivot = frame.pivot_table(index="calibration_label", columns="bin_label", values="count_mean", aggfunc="mean").fillna(0.0)
+    if pivot.empty:
+        return _empty_echart("No probability-range counts are available for this selection.", "How Many Cases Fall Into Each Risk Range")
+    if row_order:
+        ordered_index = sorted(list(pivot.index), key=lambda value: row_order.get(str(value), len(row_order)))
+        pivot = pivot.reindex(ordered_index)
     x_labels = list(pivot.columns)
     y_labels = [str(index) for index in pivot.index]
     values = []
@@ -1482,7 +1584,7 @@ def _calibration_hist_echart(calibration: pd.DataFrame, criteria: dict[str, str 
         "title": _echart_title("How Many Cases Fall Into Each Risk Range"),
         "tooltip": _echart_tooltip(trigger="item"),
         "toolbox": _echart_toolbox(),
-        "grid": {"left": 92, "right": 88, "top": 64, "bottom": 68},
+        "grid": {"left": 104, "right": 88, "top": 64, "bottom": 68},
         "xAxis": _echart_axis("Risk range bin", axis_type="category", data=x_labels),
         "yAxis": _echart_axis("Probability adjustment", axis_type="category", data=y_labels),
         "visualMap": {
@@ -1496,7 +1598,7 @@ def _calibration_hist_echart(calibration: pd.DataFrame, criteria: dict[str, str 
         },
         "series": [{"name": "Mean count", "type": "heatmap", "data": values}],
     }
-
+ 
 
 def _calibration_compare_echart(metrics: pd.DataFrame, criteria: dict[str, str | None]) -> dict:
     frame = _apply_filters(metrics, criteria)
@@ -1517,9 +1619,11 @@ def _calibration_compare_echart(metrics: pd.DataFrame, criteria: dict[str, str |
     series: list[dict] = []
     for idx, (column, title) in enumerate(metric_specs):
         left = 6 + idx * 31
-        ordered = frame.sort_values(column, ascending=True).copy()
-        categories = ordered["calibration"].map(_humanize).astype(str).tolist()
-        values = pd.to_numeric(ordered[column], errors="coerce").fillna(0.0).tolist()
+        ordered = _category_metric_summary(frame, "calibration", column).sort_values(["mean", "_label"], ascending=[True, True])
+        if ordered.empty:
+            continue
+        categories = ordered["_label"].astype(str).tolist()
+        values = pd.to_numeric(ordered["mean"], errors="coerce").fillna(0.0).tolist()
         grids.append({"left": f"{left}%", "top": 74, "width": "25%", "height": "68%"})
         x_axes.append(_echart_axis("Lower is better", min_value=0, grid_index=idx))
         y_axes.append(_echart_axis(axis_type="category", data=categories, inverse=True, grid_index=idx))
@@ -1527,25 +1631,28 @@ def _calibration_compare_echart(metrics: pd.DataFrame, criteria: dict[str, str |
         series.append(
             {
                 "type": "bar",
+                "name": title,
                 "xAxisIndex": idx,
                 "yAxisIndex": idx,
                 "data": values,
-                "barWidth": 10,
-                "itemStyle": {"color": _rgba(ACCENT["primary"], 0.32), "borderRadius": [0, 5, 5, 0]},
-                "tooltip": {"show": False},
+                "barWidth": 14,
+                "itemStyle": {"color": _rgba(ACCENT["primary"], 0.35), "borderRadius": [0, 5, 5, 0]},
             }
         )
         series.append(
             {
                 "type": "scatter",
-                "name": title,
                 "xAxisIndex": idx,
                 "yAxisIndex": idx,
-                "data": values,
-                "symbolSize": 11,
+                "data": [[float(value), y_idx] for y_idx, value in enumerate(values)],
+                "symbolSize": 10,
                 "itemStyle": {"color": ACCENT["primary"]},
+                "tooltip": {"show": False},
+                "silent": True,
             }
         )
+    if not grids:
+        return _empty_echart("No calibration-quality summary columns are available for this selection.", "Which Probability Adjustment Gives The Most Trustworthy Risks?")
     return {
         "backgroundColor": ACCENT["panel"],
         "title": titles,
@@ -1609,7 +1716,9 @@ def _fairness_selection_echart(fairness: pd.DataFrame, criteria: dict[str, str |
     frame = _apply_filters(fairness, criteria)
     if frame.empty:
         return _empty_echart("No group-level decision summary rows are available for this selection.", "How Often Each Group Is Flagged Positive")
-    features = [value for value in frame["group_feature"].dropna().astype(str).unique().tolist()]
+    preferred_feature_order = ["age_group", "bmi_category", "sex"]
+    discovered = frame["group_feature"].dropna().astype(str).unique().tolist()
+    features = [value for value in preferred_feature_order if value in discovered] + [value for value in discovered if value not in preferred_feature_order]
     if not features:
         return _empty_echart("No subgroup selection-rate rows are available for this selection.", "How Often Each Group Is Flagged Positive")
     grids = []
@@ -1622,10 +1731,16 @@ def _fairness_selection_echart(fairness: pd.DataFrame, criteria: dict[str, str |
     for idx, feature in enumerate(features):
         left = 6 + idx * (width + 2)
         subset = frame[frame["group_feature"].astype(str) == feature].copy()
-        subset["group_value_name"] = subset["group_value"].map(_humanize_group_value)
-        subset = subset.sort_values("selection_rate_mean", ascending=True)
-        categories = subset["group_value_name"].astype(str).tolist()
-        values = pd.to_numeric(subset["selection_rate_mean"], errors="coerce").fillna(0.0).tolist()
+        subset = _category_metric_summary(
+            subset,
+            "group_value",
+            "selection_rate_mean",
+            label_builder=lambda row: _humanize_group_value(row["group_value"]),
+        ).sort_values("mean", ascending=True)
+        if subset.empty:
+            continue
+        categories = subset["_label"].astype(str).tolist()
+        values = pd.to_numeric(subset["mean"], errors="coerce").fillna(0.0).tolist()
         grids.append({"left": f"{left}%", "top": 76, "width": f"{width}%", "height": "72%"})
         x_axes.append(_echart_axis("Positive prediction rate", min_value=0, max_value=1, grid_index=idx))
         y_axes.append(_echart_axis(axis_type="category", data=categories, grid_index=idx))
@@ -1645,10 +1760,11 @@ def _fairness_selection_echart(fairness: pd.DataFrame, criteria: dict[str, str |
                 "type": "scatter",
                 "xAxisIndex": idx,
                 "yAxisIndex": idx,
-                "data": values,
+                "data": [[float(value), y_idx] for y_idx, value in enumerate(values)],
                 "symbolSize": 10,
                 "itemStyle": {"color": palette.get(feature, ACCENT["primary"])},
                 "tooltip": {"show": False},
+                "silent": True,
             }
         )
     return {
